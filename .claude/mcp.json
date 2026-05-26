@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "test-case-generator": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "E:\\test_ai",
+      "description": "测试用例生成 MCP Server - 支持文档解析、用例生成、Excel导出、变更检测",
+      "env": {
+        "PYTHONPATH": "E:\\test_ai"
+      }
+    }
+  }
+}

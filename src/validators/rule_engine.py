@@ -164,7 +164,7 @@ class RuleEngine:
                 description="每条用例必须有唯一的ID",
                 severity=RuleSeverity.ERROR,
                 check=lambda c: (
-                    bool(c.get("id") and str(c.get("id")).strip()),
+                    bool(isinstance(c.get("id"), (str, int)) and str(c.get("id")).strip()),
                     "用例ID不能为空",
                 ),
             ),
@@ -174,7 +174,7 @@ class RuleEngine:
                 description="用例标题必须清晰描述测试场景",
                 severity=RuleSeverity.ERROR,
                 check=lambda c: (
-                    bool(c.get("title") and len(str(c.get("title")).strip()) >= 5),
+                    bool(isinstance(c.get("title"), str) and len(c.get("title").strip()) >= 5),
                     "用例标题不能为空且长度不少于5个字符",
                 ),
             ),

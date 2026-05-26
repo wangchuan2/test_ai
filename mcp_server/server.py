@@ -16,15 +16,25 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 # Import our modules
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.parsers import PDFParser, ExcelParser, DocxParser, ImageParser
-from src.generators import ClaudeClient, TestCaseGenerator
-from src.exporters import ExcelExporter
-from src.analyzers import RequirementSplitter
-from src.diff_engine import DocumentDiffer, ImpactAnalyzer
-from src.validators import RuleEngine, QualityScorer
+try:
+    from src.parsers import PDFParser, ExcelParser, DocxParser, ImageParser
+    from src.generators import ClaudeClient, TestCaseGenerator
+    from src.exporters import ExcelExporter
+    from src.analyzers import RequirementSplitter
+    from src.diff_engine import DocumentDiffer, ImpactAnalyzer
+    from src.validators import RuleEngine, QualityScorer
+except ImportError:
+    # 开发模式下：将项目根目录加入 sys.path（仅在需要时执行一次）
+    import sys
+    _project_root = str(Path(__file__).resolve().parent.parent)
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
+    from src.parsers import PDFParser, ExcelParser, DocxParser, ImageParser
+    from src.generators import ClaudeClient, TestCaseGenerator
+    from src.exporters import ExcelExporter
+    from src.analyzers import RequirementSplitter
+    from src.diff_engine import DocumentDiffer, ImpactAnalyzer
+    from src.validators import RuleEngine, QualityScorer
 
 # ---- Server Setup ----
 
@@ -47,12 +57,19 @@ TEST_CASES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---- Helpers ----
 
+_client_instance: ClaudeClient | None = None
+
+
 def _get_client() -> ClaudeClient:
-    """获取 Claude API 客户端。"""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("未设置 ANTHROPIC_API_KEY 环境变量")
-    return ClaudeClient(api_key=api_key)
+    """获取 LLM 客户端（单例模式）.
+
+    优先使用环境变量中的 API Key，未设置时返回 disabled 模式的客户端。
+    多次调用返回同一实例，避免重复创建。
+    """
+    global _client_instance
+    if _client_instance is None:
+        _client_instance = ClaudeClient()
+    return _client_instance
 
 
 def _save_parsed(doc_name: str, markdown: str) -> Path:
@@ -170,16 +187,20 @@ def generate_test_cases(doc_name: str, use_split: bool = False) -> str:
             return f"❌ 未找到拆分结果: {split_dir}"
 
         all_cases = []
+        errors = []
         for md_file in sorted(split_dir.glob(f"{doc_name}_*.md")):
             text = md_file.read_text(encoding="utf-8")
             try:
                 cases = generator.generate(text, historical)
                 all_cases.extend(cases)
             except Exception as e:
-                return f"❌ 生成失败 [{md_file.name}]: {e}"
+                errors.append(f"[{md_file.name}]: {e}")
 
         _save_cases(doc_name, all_cases)
-        return f"✅ 批量生成完成！共 {len(all_cases)} 条用例（来自 {len(list(split_dir.glob('*.md')))} 个模块）"
+        result = f"✅ 批量生成完成！共 {len(all_cases)} 条用例（来自 {len(list(split_dir.glob('*.md')))} 个模块）"
+        if errors:
+            result += f"\n⚠️ 部分模块生成失败 ({len(errors)} 个):\n" + "\n".join(errors)
+        return result
 
     else:
         md_path = PARSED_DIR / f"{doc_name}.md"
@@ -487,8 +508,11 @@ def list_test_cases() -> str:
 
     lines = ["# 已生成的测试用例\n"]
     for f in files:
-        cases = json.loads(f.read_text(encoding="utf-8"))
-        lines.append(f"- 📋 {f.stem}: {len(cases)} 条用例")
+        try:
+            cases = json.loads(f.read_text(encoding="utf-8"))
+            lines.append(f"- 📋 {f.stem}: {len(cases)} 条用例")
+        except (json.JSONDecodeError, OSError) as e:
+            lines.append(f"- ⚠️ {f.stem}: 读取失败 ({e})")
     return "\n".join(lines)
 
 
@@ -625,8 +649,13 @@ def get_test_case_library() -> str:
     """获取完整测试用例库。"""
     all_cases = []
     for f in TEST_CASES_DIR.glob("*_cases.json"):
-        cases = json.loads(f.read_text(encoding="utf-8"))
-        all_cases.extend(cases)
+        try:
+            cases = json.loads(f.read_text(encoding="utf-8"))
+            if isinstance(cases, list):
+                all_cases.extend(cases)
+        except (json.JSONDecodeError, OSError) as e:
+            # 跳过损坏或不可读的文件
+            continue
     return json.dumps(all_cases, ensure_ascii=False, indent=2)
 
 

@@ -1,0 +1,181 @@
+0: 需求文档驱动测试用例生成系统
+1: 操作使用手册
+2: Version 1.0
+2026年5月
+3: 目录
+4: 一、系统概述
+5: 二、系统架构
+6: 三、环境安装与配置
+7: 四、核心功能使用指南
+8: 4.1 需求文档解析
+9: 4.2 需求模块拆分
+10: 4.3 测试用例生成
+11: 4.4 Excel 导出
+12: 4.5 文档变更检测
+13: 4.6 用例自动同步
+14: 4.7 规则校验
+15: 4.8 质量评分
+16: 五、MCP Server 注册与使用
+17: 六、数据目录结构
+18: 七、常见问题
+19: 八、附录
+20: 一、系统概述
+21: 本系统是一款基于 AI 大模型的测试用例自动生成工具，专为测试工程师设计。系统支持解析 PDF、Excel、Word、图片等多种格式的需求文档，运用资深测试专家的系统化方法论，自动生成高覆盖率、高质量的功能测试用例。
+22: 系统核心能力包括：多格式文档解析、需求模块拆分、AI 智能用例生成、Excel 标准化导出、需求变更检测、用例自动同步、规则校验和质量评分。
+23: 1.1 设计原则
+24: 仅聚焦功能测试范畴，不生成性能、安全相关测试内容
+25: 运用七大系统化测试设计方法（等价类、边界值、决策表、状态转换、正交试验、场景法、错误推测）
+26: 高覆盖率保障：需求覆盖率100%、边界覆盖率100%、业务规则覆盖率100%、功能覆盖率≥95%、异常覆盖率≥90%
+27: 模块化设计思路，保证结构清晰，支持长期维护优化
+28: 预留测试空间，覆盖突发情况与非常规测试场景
+29: 二、系统架构
+30: 系统采用模块化分层架构，包含以下核心组件：
+31: 数据流转路径：
+32: 需求文档(PDF/Excel/Word/图片)
+        ↓
+  parsers/*.py  → 统一 Markdown
+        ↓
+  analyzers/requirement_splitter.py → 按模块拆分子需求
+        ↓
+  generators/case_generator.py → LLM 生成用例 JSON
+        ↓
+  exporters/excel_exporter.py → 标准化 Excel
+        ↓
+  validators/*.py → 规则校验 + 质量评分
+33: 三、环境安装与配置
+34: 3.1 依赖安装
+35: 确保 Python 3.10+ 环境，执行以下命令安装依赖：
+36: pip install fastmcp anthropic pymupdf openpyxl pandas python-docx pillow pydantic httpx
+37: 3.2 API Key 配置
+38: 系统依赖 Claude API 进行需求分析和用例生成。请设置 Anthropic API Key：
+39: set ANTHROPIC_API_KEY=your_api_key_here
+40: 或在调用 generate_test_cases 时传入 api_key 参数。
+41: 3.3 MCP Server 注册
+42: 将 MCP Server 注册到 Claude Code 中，可通过自然语言调用所有功能：
+43: claude mcp add test-case-generator -- python e:/test_ai/mcp_server/server.py
+44: 四、核心功能使用指南
+45: 4.1 需求文档解析
+46: 将需求文档（PDF、Excel、Word、图片）解析为结构化的 Markdown 文本，保留标题层级、表格、图片说明。
+47: 调用方式：
+48: parse_document(file_path="path/to/requirement.pdf")
+49: 支持格式：
+50: PDF (.pdf) — 提取文本、表格、图片位置，按字体大小识别标题层级
+51: Excel (.xlsx, .xls) — 读取多 Sheet、合并单元格
+52: Word (.docx) — 保留标题层级（Heading 1/2/3），转换表格
+53: 图片 (.png, .jpg, .jpeg) — Claude Vision API 高精度 OCR
+54: 输出：解析后的 Markdown 保存到 data/parsed/{doc_name}.md
+55: 4.2 需求模块拆分
+56: 将大需求文档按标题层级拆分为多个独立的子需求模块，每个模块生成独立的 .md 文件和索引。
+57: 调用方式：
+58: split_requirement(doc_name="requirement")
+59: 拆分策略：
+60: 一级/二级标题作为模块边界
+61: 三级及以下作为子需求
+62: 保留完整上下文和溯源信息（ID、模块名、优先级、依赖关系）
+63: 输出：data/parsed/split/{doc_name}/ 目录下的独立 Markdown 文件 + 索引 JSON
+64: 4.3 测试用例生成
+65: 基于解析后的需求文档，调用 Claude API 生成结构化测试用例 JSON。支持历史用例注入以保持风格一致性。
+66: 调用方式：
+67: # 整体生成
+generate_test_cases(doc_name="requirement")
+
+# 基于拆分后的模块逐个生成（推荐大型文档）
+generate_test_cases(doc_name="requirement", use_split=True)
+68: 生成策略：
+69: 运用七大测试设计方法：等价类、边界值、决策表、状态转换、正交试验、场景法、错误推测
+70: 高覆盖率保障：需求100%、边界100%、规则100%、功能≥95%、异常≥90%
+71: 测试数据覆盖：正常合规、边界临界、异常违规、特殊格式
+72: 操作行为覆盖：常规顺序、重复操作、逆向操作、随机顺序
+73: 仅生成功能测试用例，不生成性能/安全用例
+74: 每条用例标注使用的测试设计方法（test_method 字段）
+75: 输出：data/test_cases/{doc_name}_cases.json
+76: 4.4 Excel 导出
+77: 将生成的测试用例导出为标准化 Excel 文件，支持多 Sheet 导出和优先级颜色标记。
+78: 调用方式：
+79: # 导出到默认路径
+export_to_excel(doc_name="requirement")
+
+# 指定输出路径
+export_to_excel(doc_name="requirement", output_path="output.xlsx")
+80: Excel 模板包含列：用例ID、所属模块、用例标题、前置条件、测试步骤、预期结果、优先级、用例类型、需求来源、状态、文档版本
+81: 4.5 文档变更检测
+82: 语义级检测需求文档的变更，对比新旧版本，识别新增/删除/修改的章节，输出结构化差异报告。
+83: 调用方式：
+84: detect_doc_changes(doc_name="requirement", new_file_path="path/to/v2.pdf")
+85: 检测维度：
+86: 章节新增/删除：按 #/##/### 标题拆分，ID 匹配
+87: 内容修改：3-gram Jaccard 相似度，阈值 0.7
+88: 表格变更：统计 | 分隔行数变化
+89: 图片变更：统计 ![...] 和 [Image N] 标记数变化
+90: 风险评级：有删除=高，大量增改=中，少量修改=低
+91: 输出：变更报告 Markdown + 差异数据 JSON
+92: 4.6 用例自动同步
+93: 根据文档变更检测结果，自动分析对现有测试用例的影响，标记用例状态并生成同步报告。
+94: 调用方式：
+95: sync_test_cases(doc_name="requirement", new_doc_name="requirement_v2")
+96: 同步策略：
+97: 新增章节 → 标记需新增用例
+98: 删除章节 → 关联用例标记 deprecated
+99: 大幅修改(<50% 相似) → 关联用例标记 needs-review (high)
+100: 轻微修改 → 关联用例标记 needs-review (normal)
+101: 输出：同步后用例 JSON + 同步报告 Markdown
+102: 4.7 规则校验
+103: 对测试用例进行自动化规则校验，检查必填字段、格式规范、内容模式等，输出违规详情和修复建议。
+104: 调用方式：
+105: validate_cases(doc_name="requirement")
+106: 内置规则（12 条）：
+107: 4.8 质量评分
+108: 从五个维度对测试用例进行质量评分，输出总体评分、维度得分和改进建议。
+109: 调用方式：
+110: score_case_quality(doc_name="requirement")
+111: 评分维度：
+112: 等级评定：A+ (4.5+) / A (4.0+) / B+ (3.5+) / B (3.0+) / C (2.5+) / D (2.0+) / F (<2.0)
+113: 五、MCP Server 注册与使用
+114: 注册后可在 Claude Code 中通过自然语言调用所有功能，无需记忆命令。
+115: 5.1 注册命令
+116: claude mcp add test-case-generator -- python e:/test_ai/mcp_server/server.py
+117: 5.2 自然语言调用示例
+118: 帮我解析这个 PDF 需求文档并生成测试用例
+119: 将需求文档按模块拆分，然后逐个生成用例
+120: 把生成的测试用例导出成 Excel
+121: 检测需求文档是否有变更，更新对应的测试用例
+122: 校验刚才生成的测试用例质量
+123: 给这批用例打个质量分
+124: 5.3 完整 API 列表
+125: 六、数据目录结构
+126: 系统数据按以下目录结构组织：
+127: data/
+├── requirements/          # 原始需求文档（用户上传）
+├── parsed/                # 解析后的结构化文本
+│   ├── {doc_name}.md      # 完整文档 Markdown
+│   └── split/             # 拆分后的子需求
+│       └── {doc_name}/
+│           ├── {doc_name}_index.json
+│           └── {doc_name}_*.md
+└── test_cases/            # 生成的测试用例
+    ├── {doc_name}_cases.json
+    ├── {doc_name}_test_cases.xlsx
+    ├── {doc_name}_diff.json
+    ├── {doc_name}_change_report.md
+    ├── {doc_name}_impact.json
+    ├── {doc_name}_sync_report.md
+    ├── {doc_name}_validation.json
+    └── {doc_name}_quality.json
+128: 七、常见问题
+129: Q: 解析图片需求文档时提示 API Key 错误？
+130: A: 图片解析依赖 Claude Vision API，需要设置 ANTHROPIC_API_KEY 环境变量。
+131: Q: 生成的用例质量不高怎么办？
+132: A: 1) 确保需求文档解析完整；2) 提供历史用例 Excel 到 data/historical_cases/ 目录作为风格参考；3) 使用 score_case_quality 查看评分详情并针对性优化。
+133: Q: 大型需求文档如何处理？
+134: A: 建议先用 split_requirement 拆分文档，再用 generate_test_cases 的 use_split=True 参数逐个模块生成。
+135: Q: 需求变更后如何更新用例？
+136: A: 1) detect_doc_changes 检测变更；2) sync_test_cases 分析影响并标记状态；3) 根据报告中的建议操作（新增/Review/废弃）。
+137: Q: 如何扩展自定义校验规则？
+138: A: 在 RuleEngine 的 _build_builtin_rules 方法中添加新的 Rule 对象，或调用 add_rule() 动态添加。
+139: 八、附录
+140: 8.1 七大测试设计方法速查
+141: 8.2 优先级定义
+142: 8.3 联系方式
+143: 如有问题或建议，请通过以下方式反馈：
+• GitHub Issues: https://github.com/your-org/test-case-generator/issues
+• 邮箱: test-team@example.com

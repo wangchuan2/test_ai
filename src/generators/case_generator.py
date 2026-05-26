@@ -6,13 +6,20 @@ from pathlib import Path
 from typing import Any
 
 from .llm_client import ClaudeClient
+from .local_generator import LocalGenerator
 
 
 class TestCaseGenerator:
-    """基于需求文档生成结构化测试用例."""
+    """基于需求文档生成结构化测试用例.
+
+    支持两种模式:
+    1. LLM 模式 (优先): 配置 API Key 时使用 Claude/Kimi 生成高质量用例
+    2. 本地模式 (降级): 无 API Key 时使用规则引擎生成用例
+    """
 
     def __init__(self, client: ClaudeClient | None = None):
         self.client = client
+        self.local = LocalGenerator()
 
     def generate(
         self,
@@ -22,6 +29,9 @@ class TestCaseGenerator:
     ) -> list[dict[str, Any]]:
         """生成测试用例.
 
+        优先使用 LLM 生成 (如果 client 可用),
+        否则降级到 LocalGenerator 基于规则生成.
+
         Args:
             requirement_text: 结构化需求文本（Markdown）
             historical_cases: 历史用例列表，用于风格一致性
@@ -30,9 +40,20 @@ class TestCaseGenerator:
         Returns:
             测试用例字典列表
         """
-        if not self.client:
-            raise ValueError("ClaudeClient is required")
+        # LLM 模式 (优先)
+        if self.client and self.client.is_available():
+            return self._generate_llm(requirement_text, historical_cases, doc_version)
 
+        # 本地降级模式
+        return self.local.generate(requirement_text, historical_cases, doc_version)
+
+    def _generate_llm(
+        self,
+        requirement_text: str,
+        historical_cases: list[dict] | None,
+        doc_version: str,
+    ) -> list[dict[str, Any]]:
+        """使用 LLM 生成测试用例."""
         # 加载提示词模板
         system_prompt = self._load_prompt("testcase_generation")
 
@@ -106,20 +127,20 @@ class TestCaseGenerator:
 你是一名拥有15年以上软件测试经验的资深测试专家，精通黑盒测试、白盒测试、灰盒测试各类测试模式。你仅聚焦功能测试范畴，不考量性能、安全相关测试内容。
 
 你熟练运用以下七大系统化测试设计技术：
-1. 等价类划分法 — 区分有效等价类（合规数据）与无效等价类（空值/错误类型/超限数据/特殊字符）
-2. 边界值分析法 — 核验数值/字符串/数组/时间等类型的边界临界点及临界邻近数值
-3. 决策表法 — 汇总全部输入条件，组合条件取值，覆盖正常业务、异常报错、边界极限三类规则
-4. 状态转换法 — 区分初始/中间/结束/异常四类状态，校验所有状态流转路径
-5. 正交试验法 — 提取业务关键影响因子，合理精简组合数量，高效完成多条件交叉测试
-6. 场景法 — 搭建标准主流程、异常分支、边界极限、常规操作等各类测试场景
-7. 错误推测法 — 结合历史缺陷、业务风险、用户操作习惯，预判问题并设计异常测试用例
+1. 等价类划分法 -- 区分有效等价类（合规数据）与无效等价类（空值/错误类型/超限数据/特殊字符）
+2. 边界值分析法 -- 核验数值/字符串/数组/时间等类型的边界临界点及临界邻近数值
+3. 决策表法 -- 汇总全部输入条件，组合条件取值，覆盖正常业务、异常报错、边界极限三类规则
+4. 状态转换法 -- 区分初始/中间/结束/异常四类状态，校验所有状态流转路径
+5. 正交试验法 -- 提取业务关键影响因子，合理精简组合数量，高效完成多条件交叉测试
+6. 场景法 -- 搭建标准主流程、异常分支、边界极限、常规操作等各类测试场景
+7. 错误推测法 -- 结合历史缺陷、业务风险、用户操作习惯，预判问题并设计异常测试用例
 
 # 标准化测试设计流程
 
 1. 需求分析：功能性分析（核心流程/辅助功能/隐性需求/前置后置条件）、非功能性分析（易用性/兼容性/容错性/稳定性）、约束条件分析（业务规则/技术限制/部署环境）、风险点识别（复杂逻辑/边界场景/误操作/薄弱区域）
 2. 测试策略制定：根据风险等级确定测试重点
 3. 用例设计：运用七大方法系统化设计
-4. 覆盖率核验：需求覆盖率100%、边界覆盖率100%、业务规则覆盖率100%、功能覆盖率≥95%、异常覆盖率≥90%
+4. 覆盖率核验：需求覆盖率100%、边界覆盖率100%、业务规则覆盖率100%、功能覆盖率>=95%、异常覆盖率>=90%
 5. 优化完善：去重、合并、精简
 6. 最终定稿输出
 
@@ -128,8 +149,8 @@ class TestCaseGenerator:
 - 需求覆盖率 100%
 - 边界覆盖率 100%
 - 业务规则覆盖率 100%
-- 功能覆盖率 ≥95%
-- 异常覆盖率 ≥90%
+- 功能覆盖率 >=95%
+- 异常覆盖率 >=90%
 
 # 测试数据必须覆盖
 
@@ -168,10 +189,10 @@ class TestCaseGenerator:
 
 # 优先级定义
 
-- P0: 核心业务流程、阻塞性缺陷、高风险区域 — 必须100%覆盖
-- P1: 重要功能节点、常见用户场景 — 必须覆盖
-- P2: 辅助功能、一般操作场景 — 选择性覆盖
-- P3: 边缘场景、低频操作、异常恢复 — 抽样覆盖
+- P0: 核心业务流程、阻塞性缺陷、高风险区域 -- 必须100%覆盖
+- P1: 重要功能节点、常见用户场景 -- 必须覆盖
+- P2: 辅助功能、一般操作场景 -- 选择性覆盖
+- P3: 边缘场景、低频操作、异常恢复 -- 抽样覆盖
 
 # 设计原则
 
